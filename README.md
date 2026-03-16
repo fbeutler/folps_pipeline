@@ -53,7 +53,7 @@ Before running the pipeline, edit
 src/model.py
 ```
 
-Replace /path/to/folps/folpsD/ with the correct path to your folpsD folder:
+Replace `/path/to/folps/folpsD/` with the correct path to your folpsD folder:
 ```python
 import os, sys
 os.environ['FOLPS_BACKEND'] = 'numpy'
