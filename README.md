@@ -1,0 +1,77 @@
+# Installing the FOLPS Pipeline
+
+This guide explains how to set up the environment and install the dependencies required to run the **FOLPS pipeline**.
+
+---
+
+## 1. Create a Conda Environment
+
+(Recommended) Create a dedicated Conda environment:
+
+```bash
+mkdir -p /path/to/conda-envs
+conda create --prefix /path/to/conda-envs/folps python=3.14 -y
+```
+
+Activate your environment:
+
+```bash
+conda activate /path/to/conda-envs/folps
+```
+
+## 2. Install dependencies
+```bash
+pip install pocomc
+pip install baccoemu
+pip install pyyaml
+pip install multiprocess
+```
+
+## 3. Download the BACCO Emulator Cache
+
+BACCO emulator downloads additional files on the first run.
+
+Some HPC systems do not allow for connection during execution time. 
+In that case, you must provide the emulator cache manually.
+
+### Step 1: Locate the BACCO path
+
+Run
+```bash
+pip show baccoemu
+```
+
+This will show the installation location of the package (e.g., `/my/path/to/conda-envs/folps/lib/python3.14/site-packages/baccoemu`).
+
+### Step 2: Add the cache files
+
+Unzip the provided cache file (`bacco_cache.zip`) inside the `baccoemu` directory.
+
+## 4. Configure FOLPS Backend
+Before running the pipeline, edit
+```bash
+src/model.py
+```
+
+Replace /path/to/folps/folpsD/ with the correct path to your folpsD folder:
+```python
+import os, sys
+os.environ['FOLPS_BACKEND'] = 'numpy'
+
+sys.path.append('/path/to/folps/folpsD/')
+import folps as FOLPS
+```
+
+## 5. Update the paths in the configuration files
+Before running the pipeline, make sure all required paths are correctly set in the `.yml` files.
+
+## 6. Usage
+### 6.1. Submit on HPC
+```bash
+sbatch scripts/run_fit-poco.sh config/example.yml
+```
+
+### 6.2. Local usage
+```bash
+nohup python -u src/inference.py -config config/example.yml > nohup.out 2>&1 &
+```
