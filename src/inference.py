@@ -8,11 +8,8 @@ import pocomc as pc
 import data_loader as dload
 import covariance_loader as cload
 import likelihood as clike
-import model_APpar as model
-#import model_window as model
-#import model as model
+import model as model
 from datetime import datetime
-#import multiprocessing as mp
 import multiprocess as mp
 
 ctx = mp.get_context('fork')
@@ -167,8 +164,8 @@ if __name__ == '__main__':
         value_reshaped_selected = value_reshaped[:, mask_ell_out, :]
         value = value_reshaped_selected.reshape(Nin_total, -1)
 
-        k_theory_window = np.array(xin_flat)
-        k_obs_window    = np.array(xout_flat)
+        k_theory_window = xin_flat.reshape(np.array(xin).shape[0], int(len(xin_flat)/Nout_orig))[0]
+        #k_obs_window    = np.array(xout_flat)
         wvalue          = value.T
 
         multipoles_for_convolution = [str(ell_) for ell_ in ells_in]

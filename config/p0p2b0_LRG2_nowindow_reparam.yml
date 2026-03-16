@@ -13,6 +13,8 @@ number_of_mocks: 1000
 #rescale: 0.25
 rescale: false
 
+reparametrize: true
+
 path_to_save: '/cosma/home/dp322/dc-guan2/folps/pipeline/results/LRG/z0.8'
 #file_name: 'p0p2b0_resc_secondtest'
 file_name: 'p0p2b0_noresc_ch=0_APpriors_newest'
@@ -27,16 +29,9 @@ k_edges:
     '000':
         - 0.02
         - 0.10
-    #'202':
-    #    - 0.02
-    #    - 0.08
 
 mean_density: 1.e-3
 redshift: 0.8
-#cache_path: '/Users/austerlitz/tmp/TripoSH-Fitting/example/z0.8/'
-#cache_path: '/Users/austerlitz/TripoSH-Factory/my_project/emulator/debug/LRG/z0.8/cache/'
-
-reparametrize: true
 
 prior:
     'omega_cdm':

@@ -25,7 +25,7 @@ class FOLPSCalculator:
 
     def __init__(self, multipoles, mean_density, redshift,
                  model='EFT', damping=None, use_TNS_model=False,
-                 AP=True, cosmo_fid=None):
+                 AP=True, cosmo_fid=None, reparametrize=False):
         '''
             Damping: either "None" or " 'lor' "
             cosmo_fis: for AP;
@@ -34,11 +34,15 @@ class FOLPSCalculator:
         self.multipoles   = multipoles
         self.mean_density = mean_density
         self.zcen         = redshift
-        self.expfactor    = 1.0/(1.0+redshift) # required for baccoemu
+        self.expfactor    = 1.0/(1.0+redshift) # for baccoemu
+        self.AP = AP
         self.cosmo_fid    = cosmo_fid or {'omega_b'  : 0.02237,
                                           'omega_cdm': 0.12,
                                           'omega_nu ': 0.00064420,
-                                          'h'        : 0.6736} # required for AP effect
+                                          'h'        : 0.6736,
+                                          'ns'       : 0.9649,
+                                          'As'       : 2.0830e-9}
+        self.reparametrize = reparametrize
 
         ######################
         # Initialise linear power spectrum (bacco) emulator
@@ -50,7 +54,6 @@ class FOLPSCalculator:
         self.model = model
         self.damping = damping
         self.use_TNS_model = use_TNS_model
-        self.AP = AP
 
         if self.model == 'TNS':
             self.use_TNS_model=True
@@ -89,11 +92,29 @@ class FOLPSCalculator:
                     'wa'            :  0.0,
                     'expfactor'     :  self.expfactor
                 }
+        bacco_cosmo_fid = {
+                    'omega_cold'    : (self.cosmo_fid['omega_cdm'] + self.cosmo_fid['omega_b']) / self.cosmo_fid['h']**2,
+                    'omega_baryon'  : self.cosmo_fid['omega_b']/self.cosmo_fid['h']**2,
+                    'hubble'        : self.cosmo_fid['h'],
+                    'neutrino_mass' : 0.06,
+                    'ns'            : self.cosmo_fid['ns'],
+                    'A_s'           : self.cosmo_fid['As'],
+                    'w0'            : -1.0,
+                    'wa'            :  0.0,
+                    'expfactor'     :  self.expfactor
+                }
 
         self.kemul_pk, self.pk_lin = self.emulator.get_linear_pk(k=self.kemul_pk, cold=True, **bacco_cosmo_pars)
         self.kemul_pk, self.pk_nw  = self.emulator.get_no_wiggles_pk(k=self.kemul_pk,cold=True,**bacco_cosmo_pars)
+        #self.sigma8 = self.emulator.get_sigma8(cold=True, **bacco_cosmo_pars)
+        self.sigma8ref = self.emulator.get_sigma8(cold=True, **bacco_cosmo_fid)
 
-        return self.kemul_pk, self.pk_lin, self.pk_nw
+        self.output_dict = {'kemul_pk': self.kemul_pk,
+                            'pk_lin': self.pk_lin,
+                            'pk_nw': self.pk_nw,
+                            'sigma8ref': self.sigma8ref }
+
+        return self.output_dict
 
     ########################################################
     # FOLPS RELATED FUNCTIONS
@@ -142,7 +163,15 @@ class FOLPSCalculator:
             qpar, qperp = 1.0, 1.0
 
         # Get linear quantities
-        k_lin, pk_lin, pk_nw = self._get_linear_pk(pars)
+        bacco_quants = self._get_linear_pk(pars)
+        k_lin  = bacco_quants['kemul_pk']
+        pk_lin = bacco_quants['pk_lin']
+        pk_nw  = bacco_quants['pk_nw']
+        s8_fid = bacco_quants['sigma8ref']
+        As_fid = self.cosmo_fid['As']
+        lnAs   = pars.get('ln10^{10}A_s', np.log(1e10 * As_fid))
+        As_new = np.exp(lnAs)/1e10
+        sigma8 = s8_fid * np.sqrt(As_new / As_fid)
         k_pkl_pklnw = np.array([ k_lin,pk_lin,pk_nw ])
 
         nonlinear = FOLPS.NonLinearPowerSpectrumCalculator(
@@ -165,13 +194,14 @@ class FOLPSCalculator:
                         'k_pkl_pklnw': k_pkl_pklnw,
                         'folps_cosmo': folps_cosmo,
                         'qpar': qpar,
-                        'qperp': qperp
+                        'qperp': qperp,
+                        'sigma8': sigma8
                         }
         return output_dict
     #
     # [3] Bias parameters for the power spectrum
     #     In principle this could be removed, but it is being defined
-    #     because the list is too long (it would make the reading of 
+    #     because the list is too long (it would make the reading of
     #     the power spectrum function cumbersome)
     #
     def _get_folps_Pk_bias_params(self, pars):
@@ -195,8 +225,8 @@ class FOLPSCalculator:
         c4 = pars.get('c4pp', 0.0)
 
         ctilde = pars.get('ch', 0.0)
-        alphashot0 = pars.get('a0', 0.0)
-        alphashot2 = pars.get('a2', 0.0)
+        alphashot0 = pars.get('a0', 0.0) / self.mean_density
+        alphashot2 = pars.get('a2', 0.0) * (0.13*0.290521/ self.mean_density)
         PshotP = pars.get('PshotP', 1/self.mean_density)
 
         X_FoG = pars.get('X_FoG', 0.0)
@@ -210,12 +240,58 @@ class FOLPSCalculator:
                 ]
 
         return bias_scheme, ppars
+
+    def _apply_reparametrization(self, pars, folps_dict):
+        """
+            Add sigma8-A_AP reparametrization
+        """
+
+        s8    = folps_dict['sigma8']
+        qpar  = folps_dict['qpar']
+        qperp = folps_dict['qperp']
+        A_AP  = 1.0 / (qpar * qperp**2)
+
+        # Galaxy bias
+        if 'b1_tilde' in pars:
+            pars['b1'] = pars['b1_tilde'] / ( s8 * np.sqrt(A_AP) )
+        if 'b2_tilde' in pars:
+            pars['b2'] = pars['b2_tilde'] / ( s8**2 * np.sqrt(A_AP) )
+        if 'bG2_tilde' in pars:
+            pars['bG2'] = pars['bG2_tilde'] / ( s8**2 * np.sqrt(A_AP) )
+        if 'bGamma3_tilde' in pars:
+            pars['bGamma3'] = pars['bGamma3_tilde'] / ( s8**3 * np.sqrt(A_AP) )
+
+        # Power spectrum counterterms
+        if 'c0_tilde' in pars:
+            pars['c0'] = pars['c0_tilde'] / (A_AP * s8**2)
+        if 'c2pp_tilde' in pars:
+            pars['c2pp'] = pars['c2pp_tilde'] / (A_AP * s8**2)
+        if 'c4pp_tilde' in pars:
+            pars['c4pp'] = pars['c4pp_tilde'] / (A_AP * s8**2)
+        if 'a0_tilde' in pars:
+            pars['a0'] = pars['a0_tilde'] / A_AP
+        if 'a2_tilde' in pars:
+            pars['a2'] = pars['a2_tilde'] / A_AP
+
+        # Bispectrum
+        if 'c1_tilde' in pars:
+            pars['c1'] = pars['c1_tilde'] / (A_AP * s8**2)
+        if 'c2_tilde' in pars:
+            pars['c2'] = pars['c2_tilde'] / (A_AP * s8**2)
+        if 'Pshot_tilde' in pars:
+            pars['Pshot'] = pars['Pshot_tilde'] / A_AP
+        if 'Bshot_tilde' in pars:
+            pars['Bshot'] = pars['Bshot_tilde'] / A_AP
+
+        return pars
     #
     # [4] Compute the 1-loop power spectrum multipoles
     #
     def pk_from_model(self, pars):
 
         folps = self._compute_folps_quantities(pars)
+        if self.reparametrize:
+            pars = self._apply_reparametrization(pars.copy(), folps)
         bias_scheme, NuisanceParams = self._get_folps_Pk_bias_params(pars)
 
         pkl0, pkl2, pkl4  = self.folps_pk.get_rsd_pkell(
@@ -242,15 +318,17 @@ class FOLPSCalculator:
     def bk_from_model(self, pars):
 
         folps = self._compute_folps_quantities(pars)
+        if self.reparametrize:
+            pars = self._apply_reparametrization(pars.copy(), folps)
 
         bpars = [
-            pars.get('b1', 1.0),
-            pars.get('b2', 0.0),
+            pars['b1'],
+            pars['b2'],
             pars.get('bG2', 0.0),
             pars.get('c1', 0.0),
             pars.get('c2', 0.0),
-            pars.get('Bshot', 0.0)/self.mean_density,
-            pars.get('Pshot', 0.0)/self.mean_density,
+            pars.get('Bshot', 0.0) / self.mean_density,
+            pars.get('Pshot', 0.0) / self.mean_density,
             pars.get('X_FoG_bk', 1.0)
         ]
 
@@ -643,15 +721,15 @@ class BICKERCalculator:
                 bias *= fnlequi
             if 'fnlortho' in b:
                 bias *= fnlortho
-            
+
             # Get the bias-weighted kernel
             self.bk_model += bias * values
-        
+
         #if Pshot != 0: 
         #    self.bk_model += ((1+Pshot)/self.mean_density)**2
 
         self.interp_function = interp1d(self.kernels_k, self.bk_model, kind='cubic', fill_value='extrapolate')
-        
+
         return self.interp_function
 
     def help(self):
@@ -665,7 +743,7 @@ class BICKERCalculator:
         Usage:
         ------
         calculator = BICKERCalculator(multipoles, mean_density, redshift, cache_path, fixed_params, rescale)
-        
+
         Methods:
         --------
         1. kernels_from_emulator(pars, ell)
@@ -673,7 +751,7 @@ class BICKERCalculator:
             - Parameters: 
                 pars (dict): A dictionary containing EFT parameters.
                 ell (str): The multipole to compute (e.g., '000', '202').
-        
+
         2. pk_from_model(pars, ell)
             - Computes the power spectrum model for a given multipole.
             - Parameters:
