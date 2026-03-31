@@ -256,9 +256,9 @@ if __name__ == '__main__':
     ##################
 
     # number of effective particles
-    neff = 4000
+    neff = 8000
     # number of effectively independent samples
-    ntot = 20000
+    ntot = 40000
 
     if cmdline.ncpus is not None:
         ncpus = int(cmdline.ncpus)
