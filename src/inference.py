@@ -256,9 +256,9 @@ if __name__ == '__main__':
     ##################
 
     # number of effective particles
-    neff = 8000
+    neff = 4000
     # number of effectively independent samples
-    ntot = 40000
+    ntot = 20000
 
     if cmdline.ncpus is not None:
         ncpus = int(cmdline.ncpus)
@@ -268,10 +268,9 @@ if __name__ == '__main__':
     print(f'Starting sampling at {datetime.now()} with {ncpus} CPUs. \n')
 
     # Check for checkpoints
-
-    final_state = os.path.join(path_to_save, f"{file_name}_final.state")
-
     if os.path.exists(final_state):
+        final_state = os.path.join(path_to_save, f"{file_name}_final.state")
+        print('Sample from existing file', final_state)
         resume_file = final_state
     else:
         resume_file = None
@@ -281,7 +280,7 @@ if __name__ == '__main__':
         match = re.search(r'_(\d+)\.state$', filename)
         return int(match.group(1)) if match else -1
 
-    if not resume_file:
+    if resume_file is None:
         state_files = sorted(state_files, key=extract_iteration)
 
         if state_files:
