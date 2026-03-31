@@ -274,18 +274,19 @@ if __name__ == '__main__':
     if os.path.exists(final_state):
         resume_file = final_state
     else:
+        resume_file = None
         state_files = sorted(glob.glob(os.path.join(path_to_save, f"{file_name}_*.state")))
 
     def extract_iteration(filename):
         match = re.search(r'_(\d+)\.state$', filename)
         return int(match.group(1)) if match else -1
 
-    state_files = sorted(state_files, key=extract_iteration)
+    if not resume_file:
+        state_files = sorted(state_files, key=extract_iteration)
 
-    resume_file = None
-    if state_files:
-        resume_file = state_files[-1]
-        print(f"Resuming from {resume_file}")
+        if state_files:
+            resume_file = state_files[-1]
+            print(f"Resuming from {resume_file}")
 
     if ncpus > 1:
         with ctx.Pool(ncpus) as pool:
